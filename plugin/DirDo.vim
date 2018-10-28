@@ -169,6 +169,13 @@
 "   Lijian Liu and Thomas Nickl for reporting numerous bugs.
 "
 " HISTORY:
+"  1.31 - 11-Feb-2008 /^-- BF: :DirDoPattern didn't take <f-args>.
+"                          BF: Forgotten let matchPath = '*'.
+"                          BF: Escapes filenames for :argl (to handle spaces in
+"                          filenames, etc. )
+"                          Avoiding duplicate path separators.
+"                          BF: :DirReplace only replaced on current line, not
+"                          globally.
 "  1.3  - 9/14/2005 Added the DirReplace command
 "  1.2  - 6/12/2003 Added the DirDoFast command so you can set directory,
 "  pattern, and command at once.  Fixed bug where the unix hidden file will
@@ -197,7 +204,7 @@ command! -nargs=* -complete=dir DDA call <SID>DirDoAdd(<f-args>)
 command! -nargs=* -complete=dir DirDoAdd call <SID>DirDoAdd(<f-args>)
 
 command! -nargs=* DDP call <SID>DirDoPattern(<f-args>)
-command! -nargs=* DirDoPattern call <SID>DirDoPattern()
+command! -nargs=* DirDoPattern call <SID>DirDoPattern(<f-args>)
 
 " Sort the import with preferences to the java.* classes
 "
@@ -234,7 +241,7 @@ fun! <SID>DirReplace(...)
     if (cfm == 1)
         let setStr = "gce"
     endif
-    let cmd = "s/" . searchRegex . "/" . replaceStr . "/" . setStr . "|update"
+    let cmd = "%s/" . searchRegex . "/" . replaceStr . "/" . setStr . "|update"
     call <SID>DirDoFast(ddd, ddp, cmd, 0)
 endfun
 
@@ -426,7 +433,7 @@ fun! <SID>GetRegExPattern()
     let matchPat = <SID>TrimStr(g:DirDoPattern)
     if (matchPat == "")
         " Default to all file
-        matchPat = '*'
+        let matchPat = '*'
     endif
     let matchPat = matchPat . ' '
     " We would like to change the * to .* and escape the . in the glob pattern
@@ -440,21 +447,29 @@ fun! <SID>GetRegExPattern()
     return ('\(' . patStr . '\)')
 endfun
 
+fun! <SID>EscapeNormalFilespec( filespec )
+    " Also replace backslash path separators with forward slashes, VIM handles
+    " them as well, and this avoids strange VIM 7.1 hangs when processing
+    " D:\\my\\path\ to\ freedom.
+    return substitute( substitute(a:filespec, '\\', '/', 'g'), '[\\ %#]', '\\\0', 'g' )
+endfun
+
 " The helper function to apply the command to a directory
 fun! <SID>DirDoHlp(cpath, cmd)
-    "echo "Arguments " . a:cpath . " cmd is " . a:cmd
+    let cpath = substitute(a:cpath, '[\\/]$', '', '')
+    "echo "Arguments " . cpath . " cmd is " . a:cmd
     "we would like to ignore path that ends with [\/].. and [\/].
-    if (match(a:cpath, '\([\\/]\.$\|[\\/]\.\.$\|^\.\.$\|^\.$\)') > -1)
+    if (match(cpath, '\([\\/]\.$\|[\\/]\.\.$\|^\.\.$\|^\.$\)') > -1)
         return 0
     endif
-    if (!isdirectory(a:cpath) && match(a:cpath, s:MatchRegexPattern) > -1)
-        "echo "Is not dir... " . a:cpath
+    if (!isdirectory(cpath) && match(cpath, s:MatchRegexPattern) > -1)
+        "echo "Is not dir... " . cpath
         let i = 1
         if (s:CancelFile == 1)
             return 0
         endif
         if (s:Verbose == 1 && s:AskFile == 1)
-            let i = confirm("Apply command to file " . a:cpath . "?", "&Yes\nYes for &All Files\n&No\n&Cancel", 1)
+            let i = confirm("Apply command to file " . cpath . "?", "&Yes\nYes for &All Files\n&No\n&Cancel", 1)
         endif
         if (i == 4)
             let s:CancelFile = 1
@@ -467,15 +482,15 @@ fun! <SID>DirDoHlp(cpath, cmd)
             let s:AskFile = 0
         endif
 
-        exe "argl " . a:cpath
+        exe "argl " . s:EscapeNormalFilespec(cpath)
         exe "argdo " . a:cmd
         return 1
     else
-        if (isdirectory(a:cpath))
-            let files = glob(a:cpath . "/*")
+        if (isdirectory(cpath))
+            let files = glob(cpath . "/*")
             let files = files . "\n"
             " we would like to get the hidden files also
-            let hfiles = glob(a:cpath . "/.*")
+            let hfiles = glob(cpath . "/.*")
             let hfiles = hfiles . "\n"
             let files = files . hfiles
             let fileCtr = 0
